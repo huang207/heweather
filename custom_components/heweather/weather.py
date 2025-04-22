@@ -45,6 +45,8 @@ from homeassistant.const import (
 import homeassistant.helpers.config_validation as cv
 import homeassistant.util.dt as dt_util
 
+from .heweather.heweather_cert import HeWeatherCert
+
 from .heweather.const import (
     DOMAIN,
     CONF_AUTH_METHOD,
@@ -350,52 +352,62 @@ class HeWeather(WeatherEntity):
 class WeatherData():
     """天气相关的数据，存储在这个类中."""
 
-    def __init__(self, hass, location, host, key):
+    # def __init__(self, hass, location, host, key):
+    #     """初始化函数."""
+    #     self._hass = hass
+
+    #     #self._url = "https://free-api.heweather.com/s6/weather/forecast?location="+location+"&key="+key
+    #     self._forecast_url = "https://"+host+"/v7/weather/7d?location="+location+"&key="+key
+    #     self._weather_now_url = "https://"+host+"/v7/weather/now?location="+location+"&key="+key
+    #     self._forecast_hourly_url = "https://"+host+"/v7/weather/24h?location="+location+"&key="+key
+    #     self._params = {"location": location,
+    #                     "key": key}
+
+    #     self._is_jwt = False
+
+    #     #self._name = None
+    #     self._condition = None
+    #     self._temperature = None
+    #     self._temperature_unit = None
+    #     self._humidity = None
+    #     self._pressure = None
+    #     self._wind_speed = None
+    #     self._wind_bearing = None
+    #     self._visibility = None
+    #     self._precipitation = None
+    #     self._dew = None
+    #     self._feelslike = None
+    #     self._cloud =None
+
+    #     self._forecast = None
+    #     self._forecast_hourly = None
+    #     self._updatetime = None
+
+
+    def __init__(self, hass, location, host : str, cert_element : str | HeWeatherCert, jwt_sub = None, jwt_kid = None):
         """初始化函数."""
         self._hass = hass
 
         #self._url = "https://free-api.heweather.com/s6/weather/forecast?location="+location+"&key="+key
-        self._forecast_url = "https://"+host+"/v7/weather/7d?location="+location+"&key="+key
-        self._weather_now_url = "https://"+host+"/v7/weather/now?location="+location+"&key="+key
-        self._forecast_hourly_url = "https://"+host+"/v7/weather/24h?location="+location+"&key="+key
-        self._params = {"location": location,
-                        "key": key}
+        if isinstance(cert_element, str):
+            self._forecast_url = "https://"+host+"/v7/weather/7d?location="+location+"&key="+cert_element
+            self._weather_now_url = "https://"+host+"/v7/weather/now?location="+location+"&key="+cert_element
+            self._forecast_hourly_url = "https://"+host+"/v7/weather/24h?location="+location+"&key="+cert_element
+            self._params = {"location": location,
+                            "key": cert_element}
 
-        self._is_jwt = False
+            self._is_jwt = False
 
-        #self._name = None
-        self._condition = None
-        self._temperature = None
-        self._temperature_unit = None
-        self._humidity = None
-        self._pressure = None
-        self._wind_speed = None
-        self._wind_bearing = None
-        self._visibility = None
-        self._precipitation = None
-        self._dew = None
-        self._feelslike = None
-        self._cloud =None
+        elif isinstance(cert_element, HeWeatherCert):
+            self._forecast_url = "https://"+host+"/v7/weather/7d?location="+location
+            self._weather_now_url = "https://"+host+"/v7/weather/now?location="+location
+            self._forecast_hourly_url = "https://"+host+"/v7/weather/24h?location="+location
+            self._params = {"location": location}
 
-        self._forecast = None
-        self._forecast_hourly = None
-        self._updatetime = None
-
-
-    def __init__(self, hass, location, host, heweather_cert, jwt_sub, jwt_kid):
-        """初始化函数."""
-        self._hass = hass
-
-        #self._url = "https://free-api.heweather.com/s6/weather/forecast?location="+location+"&key="+key
-        self._forecast_url = "https://"+host+"/v7/weather/7d?location="+location
-        self._weather_now_url = "https://"+host+"/v7/weather/now?location="+location
-        self._forecast_hourly_url = "https://"+host+"/v7/weather/24h?location="+location
-        self._params = {"location": location}
-
-        self._is_jwt = True
-        self._heweather_cert = heweather_cert
-        self._jwt_sub = jwt_sub
-        self._jwt_kid = jwt_kid
+            self._is_jwt = True
+            self._heweather_cert = cert_element
+            self._jwt_sub = jwt_sub
+            self._jwt_kid = jwt_kid
 
         #self._name = None
         self._condition = None

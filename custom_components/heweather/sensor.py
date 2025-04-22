@@ -37,6 +37,8 @@ from homeassistant.helpers.entity import Entity
 import homeassistant.helpers.config_validation as cv
 import homeassistant.util.dt as dt_util
 
+from .heweather.heweather_cert import HeWeatherCert
+
 from .heweather.const import (
     DOMAIN,
     CONF_AUTH_METHOD,
@@ -129,14 +131,14 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, asyn
     if auth_method == "key":
         key = config_entry.data.get(CONF_KEY)
         suggestion_data = SuggestionData(hass, location, host, key)
-        weather_data = WeatherData(hass, location, host, key, disastermsg, disasterlevel)
+        weather_data = WeatherData(hass, location, disastermsg, disasterlevel, host, key)
     else:
         # HeWeather Certification
         heweather_cert = hass.data[DOMAIN].get('heweather_cert', None)
         jwt_sub = config_entry.data.get(CONF_JWT_SUB)
         jwt_kid = config_entry.data.get(CONF_JWT_KID)
         suggestion_data = SuggestionData(hass, location, host, heweather_cert, jwt_sub, jwt_kid)
-        weather_data = WeatherData(hass, location, host, heweather_cert, jwt_sub, jwt_kid, disastermsg, disasterlevel)
+        weather_data = WeatherData(hass, location, disastermsg, disasterlevel, host, heweather_cert, jwt_sub, jwt_kid)
 
     await weather_data.async_update(dt_util.now())
     async_track_time_interval(hass, weather_data.async_update, WEATHER_TIME_BETWEEN_UPDATES, cancel_on_shutdown=True)
@@ -161,7 +163,7 @@ async def async_setup_platform(hass, config, async_add_devices, discovery_info=N
     disastermsg = config.get(CONF_DISASTERMSG)
     disasterlevel = config.get(CONF_DISASTERLEVEL)
     # 这里通过 data 实例化class weatherdata，并传入调用API所需信息
-    weather_data = WeatherData(hass, location, host, key, disastermsg, disasterlevel)
+    weather_data = WeatherData(hass, location, disastermsg, disasterlevel, host, key)
     suggestion_data = SuggestionData(hass, location, host, key)
 
     await weather_data.async_update(dt_util.now())
@@ -336,73 +338,86 @@ class HeweatherWeatherSensor(Entity):
 class WeatherData(object):
     """天气相关的数据，存储在这个类中."""
 
-    def __init__(self, hass, location, host, key, disastermsg, disasterlevel):
+    # def __init__(self, hass, location, host, key, disastermsg, disasterlevel):
+    #     """初始化函数."""
+    #     self._hass = hass
+    #     self._disastermsg = disastermsg
+    #     self._disasterlevel = disasterlevel
+    #     #disastermsg, disasterlevel
+
+    #    # self._url = "https://free-api.heweather.com/s6/weather/now"
+    #     self._weather_now_url = "https://"+host+"/v7/weather/now?location="+location+"&key="+key
+    #     self._air_now_url = "https://"+host+"/v7/air/now?location="+location+"&key="+key
+    #     self._disaster_warn_url = "https://"+host+"/v7/warning/now?location="+location+"&key="+key
+    #     self._params = {"location": location,
+    #                     "key": key}
+    #     self._temprature = None
+    #     self._humidity = None
+
+
+    #     self._is_jwt = False
+
+    #     self._feelsLike = None
+    #     self._text = None
+    #     self._windDir = None
+    #     self._windScale = None
+    #     self._windSpeed = None
+    #     self._precip = None
+    #     self._pressure = None
+    #     self._vis = None
+    #     self._cloud = None
+    #     self._dew = None
+    #     self._updatetime = None
+
+    #     self._category = None
+    #     self._pm10 = None
+    #     self._primary = None
+    #     self._level = None
+
+
+
+    #     self._pm25 = None
+    #     self._no2 = None
+    #     self._so2 = None
+    #     self._co = None
+    #     self._o3 = None
+    #     self._qlty = None
+    #     self._disaster_warn = None
+    #     self._updatetime = None
+
+    def __init__(self, hass, location, disastermsg, disasterlevel, host, cert_element : str | HeWeatherCert, jwt_sub = None, jwt_kid = None):
         """初始化函数."""
         self._hass = hass
         self._disastermsg = disastermsg
         self._disasterlevel = disasterlevel
         #disastermsg, disasterlevel
 
-       # self._url = "https://free-api.heweather.com/s6/weather/now"
-        self._weather_now_url = "https://"+host+"/v7/weather/now?location="+location+"&key="+key
-        self._air_now_url = "https://"+host+"/v7/air/now?location="+location+"&key="+key
-        self._disaster_warn_url = "https://"+host+"/v7/warning/now?location="+location+"&key="+key
-        self._params = {"location": location,
-                        "key": key}
-        self._temprature = None
-        self._humidity = None
+        # self._url = "https://free-api.heweather.com/s6/weather/now"
+        if isinstance(cert_element, str):
+            self._weather_now_url = "https://"+host+"/v7/weather/now?location="+location+"&key="+cert_element
+            self._air_now_url = "https://"+host+"/v7/air/now?location="+location+"&key="+cert_element
+            self._disaster_warn_url = "https://"+host+"/v7/warning/now?location="+location+"&key="+cert_element
+            self._params = {"location": location,
+                            "key": cert_element}
+            self._temprature = None
+            self._humidity = None
 
 
-        self._is_jwt = False
+            self._is_jwt = False
 
-        self._feelsLike = None
-        self._text = None
-        self._windDir = None
-        self._windScale = None
-        self._windSpeed = None
-        self._precip = None
-        self._pressure = None
-        self._vis = None
-        self._cloud = None
-        self._dew = None
-        self._updatetime = None
-
-        self._category = None
-        self._pm10 = None
-        self._primary = None
-        self._level = None
+        elif isinstance(cert_element, HeWeatherCert):
+            self._weather_now_url = "https://"+host+"/v7/weather/now?location="+location
+            self._air_now_url = "https://"+host+"/v7/air/now?location="+location
+            self._disaster_warn_url = "https://"+host+"/v7/warning/now?location="+location
+            self._params = {"location": location}
+            self._temprature = None
+            self._humidity = None
 
 
-
-        self._pm25 = None
-        self._no2 = None
-        self._so2 = None
-        self._co = None
-        self._o3 = None
-        self._qlty = None
-        self._disaster_warn = None
-        self._updatetime = None
-
-    def __init__(self, hass, location, host, heweather_cert, jwt_sub, jwt_kid, disastermsg, disasterlevel):
-        """初始化函数."""
-        self._hass = hass
-        self._disastermsg = disastermsg
-        self._disasterlevel = disasterlevel
-        #disastermsg, disasterlevel
-
-       # self._url = "https://free-api.heweather.com/s6/weather/now"
-        self._weather_now_url = "https://"+host+"/v7/weather/now?location="+location
-        self._air_now_url = "https://"+host+"/v7/air/now?location="+location
-        self._disaster_warn_url = "https://"+host+"/v7/warning/now?location="+location
-        self._params = {"location": location}
-        self._temprature = None
-        self._humidity = None
-
-
-        self._is_jwt = True
-        self._heweather_cert = heweather_cert
-        self._jwt_sub = jwt_sub
-        self._jwt_kid = jwt_kid
+            self._is_jwt = True
+            self._heweather_cert = cert_element
+            self._jwt_sub = jwt_sub
+            self._jwt_kid = jwt_kid
 
         self._feelsLike = None
         self._text = None
@@ -628,47 +643,57 @@ class WeatherData(object):
 class SuggestionData(object):
     """天气相关建议的数据，存储在这个类中."""
 
-    def __init__(self, hass, location, host, key):
+    # def __init__(self, hass, location, host, key):
+    #     """初始化函数."""
+    #     self._hass = hass
+
+    #     self._url = "https://"+host+"/v7/indices/1d?location="+location+"&key="+key+"&type=0"
+    #     self._params = {"location": location,
+    #                     "key": key,
+    #                     "type": 0
+    #                 }
+
+    #     self._is_jwt = False
+
+    #     self._updatetime = ["1","1"]
+    #     self._air = ["1","1"]
+    #     self._comf = ["1","1"]
+    #     self._cw = ["1","1"]
+    #     self._drsg = ["1","1"]
+    #     self._flu = ["1","1"]
+    #     self._sport = ["1","1"]
+    #     self._trav = ["1","1"]
+    #     self._uv = ["1","1"]
+    #     self._guomin = None
+    #     self._kongtiao = None
+    #     self._sunglass = None
+    #     self._liangshai = None
+    #     self._fangshai = None
+    #     self._jiaotong = None
+
+    def __init__(self, hass, location, host, cert_element : str | HeWeatherCert, jwt_sub = None, jwt_kid = None):
         """初始化函数."""
         self._hass = hass
 
-        self._url = "https://"+host+"/v7/indices/1d?location="+location+"&key="+key+"&type=0"
-        self._params = {"location": location,
-                        "key": key,
-                        "type": 0
-                    }
+        if isinstance(cert_element, str):
+            self._url = "https://"+host+"/v7/indices/1d?location="+location+"&key="+cert_element+"&type=0"
+            self._params = {"location": location,
+                            "key": cert_element,
+                            "type": 0
+                        }
 
-        self._is_jwt = False
+            self._is_jwt = False
 
-        self._updatetime = ["1","1"]
-        self._air = ["1","1"]
-        self._comf = ["1","1"]
-        self._cw = ["1","1"]
-        self._drsg = ["1","1"]
-        self._flu = ["1","1"]
-        self._sport = ["1","1"]
-        self._trav = ["1","1"]
-        self._uv = ["1","1"]
-        self._guomin = None
-        self._kongtiao = None
-        self._sunglass = None
-        self._liangshai = None
-        self._fangshai = None
-        self._jiaotong = None
+        elif isinstance(cert_element, HeWeatherCert):
+            self._url = "https://"+host+"/v7/indices/1d?location="+location+"&type=0"
+            self._params = {"location": location,
+                            "type": 0
+                        }
 
-    def __init__(self, hass, location, host, heweather_cert, jwt_sub, jwt_kid):
-        """初始化函数."""
-        self._hass = hass
-
-        self._url = "https://"+host+"/v7/indices/1d?location="+location+"&type=0"
-        self._params = {"location": location,
-                        "type": 0
-                    }
-
-        self._is_jwt = True
-        self._heweather_cert = heweather_cert
-        self._jwt_sub = jwt_sub
-        self._jwt_kid = jwt_kid
+            self._is_jwt = True
+            self._heweather_cert = cert_element
+            self._jwt_sub = jwt_sub
+            self._jwt_kid = jwt_kid
 
         self._updatetime = ["1","1"]
         self._air = ["1","1"]

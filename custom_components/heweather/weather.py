@@ -113,24 +113,29 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, asyn
     """Set up the hefeng weather."""
     _LOGGER.info("setup platform weather.Heweather...")
 
-    location = config_entry.data.get(CONF_LOCATION)
+    locations: dict[str, dict[str, str] | None] = config_entry.data.get(CONF_LOCATION)
     host = config_entry.data.get(CONF_HOST)
     auth_method = config_entry.data.get(CONF_AUTH_METHOD)
+    weathers: list[HeWeather] = []
     if auth_method == "key":
         key = config_entry.data.get(CONF_KEY)
-        data = WeatherData(hass, location, host, key)
+        for _id, _detail in locations.items():
+            data = WeatherData(hass, _id, host, key)
+            weathers.append(HeWeather(data, _id, _detail.get("name") if _detail else None))
     else:
         # HeWeather Certification
         heweather_cert = hass.data[DOMAIN].get('heweather_cert', None)
         jwt_sub = config_entry.data.get(CONF_JWT_SUB)
         jwt_kid = config_entry.data.get(CONF_JWT_KID)
-        data = WeatherData(hass, location, host, heweather_cert, jwt_sub, jwt_kid)
+        for _id, _detail in locations.items():
+            data = WeatherData(hass, _id, host, heweather_cert, jwt_sub, jwt_kid)
+            weathers.append(HeWeather(data, _id, _detail.get("name") if _detail else None))
 
-    weather = HeWeather(data, location)
-    await weather.async_update_data(dt_util.now())
-    async_track_time_interval(hass, weather.async_update_data, TIME_BETWEEN_UPDATES, cancel_on_shutdown=True)
+    for weather in weathers:
+        await weather.async_update_data(dt_util.now())
+        async_track_time_interval(hass, weather.async_update_data, TIME_BETWEEN_UPDATES, cancel_on_shutdown=True)
 
-    async_add_entities([weather], True)
+    async_add_entities(weathers, True)
 
 #@asyncio.coroutine
 async def async_setup_platform(hass, config, async_add_devices, discovery_info=None):
@@ -157,9 +162,9 @@ class HeWeather(WeatherEntity):
     _attr_native_wind_speed_unit = UnitOfSpeed.KILOMETERS_PER_HOUR
     _attr_native_visibility_unit = UnitOfLength.KILOMETERS
 
-    def __init__(self, data, location):
+    def __init__(self, data, location, name = None):
         """Initialize the  weather."""
-        #self._name = None
+        self._name = name
         self._object_id = 'localweather'
         self._condition = None
         self._temperature = None
@@ -187,7 +192,7 @@ class HeWeather(WeatherEntity):
     @property
     def name(self):
         """返回实体的名字."""
-        return '和风天气'
+        return f'{self._name} - 和风天气' if self._name else '和风天气'
 
     @property
     def should_poll(self):

@@ -121,34 +121,41 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, asyn
     """这个协程是程序的入口，其中add_devices函数也变成了异步版本."""
     _LOGGER.info("setup platform sensor.Heweather...")
 
-    location = config_entry.data.get(CONF_LOCATION)
+    locations: dict[str, dict[str, str] | None] = config_entry.data.get(CONF_LOCATION)
     host = config_entry.data.get(CONF_HOST)
     key = config_entry.data.get(CONF_KEY)
     disastermsg = config_entry.data.get(CONF_DISASTERMSG)
     disasterlevel = config_entry.data.get(CONF_DISASTERLEVEL)
     # 这里通过 data 实例化class weatherdata，并传入调用API所需信息
     auth_method = config_entry.data.get(CONF_AUTH_METHOD)
+    datas: list[tuple[SuggestionData, WeatherData, str, str]] = []
     if auth_method == "key":
         key = config_entry.data.get(CONF_KEY)
-        suggestion_data = SuggestionData(hass, location, host, key)
-        weather_data = WeatherData(hass, location, disastermsg, disasterlevel, host, key)
+        for _id, _detail in locations.items():
+            datas.append((SuggestionData(hass, _id, host, key),
+                          WeatherData(hass, _id, disastermsg, disasterlevel, host, key),
+                          _id, _detail.get("name") if _detail else None))
     else:
         # HeWeather Certification
         heweather_cert = hass.data[DOMAIN].get('heweather_cert', None)
         jwt_sub = config_entry.data.get(CONF_JWT_SUB)
         jwt_kid = config_entry.data.get(CONF_JWT_KID)
-        suggestion_data = SuggestionData(hass, location, host, heweather_cert, jwt_sub, jwt_kid)
-        weather_data = WeatherData(hass, location, disastermsg, disasterlevel, host, heweather_cert, jwt_sub, jwt_kid)
-
-    await weather_data.async_update(dt_util.now())
-    async_track_time_interval(hass, weather_data.async_update, WEATHER_TIME_BETWEEN_UPDATES, cancel_on_shutdown=True)
-
-    await suggestion_data.async_update(dt_util.now())
-    async_track_time_interval(hass, suggestion_data.async_update, LIFESUGGESTION_TIME_BETWEEN_UPDATES, cancel_on_shutdown=True)
+        for _id, _detail in locations.items():
+            datas.append((SuggestionData(hass, _id, host, heweather_cert, jwt_sub, jwt_kid),
+                          WeatherData(hass, _id, disastermsg, disasterlevel, host, heweather_cert, jwt_sub, jwt_kid),
+                          _id, _detail.get("name") if _detail else None))
 
     dev = []
-    for option in CONF_SENSOR_LIST:
-        dev.append(HeweatherWeatherSensor(weather_data,suggestion_data, option,location))
+    for suggestion_data, weather_data, location, name in datas:
+        await weather_data.async_update(dt_util.now())
+        async_track_time_interval(hass, weather_data.async_update, WEATHER_TIME_BETWEEN_UPDATES, cancel_on_shutdown=True)
+
+        await suggestion_data.async_update(dt_util.now())
+        async_track_time_interval(hass, suggestion_data.async_update, LIFESUGGESTION_TIME_BETWEEN_UPDATES, cancel_on_shutdown=True)
+
+        for option in CONF_SENSOR_LIST:
+            dev.append(HeweatherWeatherSensor(weather_data, suggestion_data, option, location, name))
+
     async_add_entities(dev, True)
 
 
@@ -181,12 +188,12 @@ async def async_setup_platform(hass, config, async_add_devices, discovery_info=N
 class HeweatherWeatherSensor(Entity):
     """定义一个温度传感器的类，继承自HomeAssistant的Entity类."""
 
-    def __init__(self, weather_data,suggestion_data, option,location):
+    def __init__(self, weather_data,suggestion_data, option,location, name = None):
         """初始化."""
         self._weather_data = weather_data
         self._suggestion_data = suggestion_data
         self._object_id = OPTIONS[option][0]
-        self._name = OPTIONS[option][1]
+        self._name = f"{name} - {OPTIONS[option][1]}" if name else OPTIONS[option][1]
         self._icon = OPTIONS[option][2]
         self._unit_of_measurement = OPTIONS[option][3]
 
@@ -796,7 +803,7 @@ class SuggestionData(object):
             if self._is_jwt:
                 jwt_token = await self._heweather_cert.get_jwt_token_heweather_async(self._jwt_sub, self._jwt_kid, int(time.time()) - 30, int(time.time()) + 180)
                 headers = {'Authorization': f'Bearer {jwt_token}'}
-            with async_timeout.timeout(15):
+            async with async_timeout.timeout(15):
             #with async_timeout.timeout(15, loop=self._hass.loop):
                 response = await session.get(
                     self._url, headers=headers)

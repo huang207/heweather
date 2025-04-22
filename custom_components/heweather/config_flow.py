@@ -1,8 +1,10 @@
 import logging
 
 import asyncio
+import time
 from typing import Optional
 
+import aiohttp
 import voluptuous as vol
 
 from homeassistant import config_entries
@@ -10,6 +12,8 @@ from homeassistant import config_entries
 from .heweather.const import (
     DOMAIN,
     DEFAULT_NAME,
+    CURRENT_CONF_VERSION,
+    CURRENT_CONF_MINOR_VERSION,
     CONF_AUTH_METHOD,
     CONF_LOCATION,
     CONF_HOST,
@@ -33,8 +37,8 @@ from .heweather.heweather_cert import HeWeatherCert
 _LOGGER = logging.getLogger(__name__)
 
 class HeWeatherConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
-    VERSION = 1
-    MINOR_VERSION = 1
+    VERSION = CURRENT_CONF_VERSION
+    MINOR_VERSION = CURRENT_CONF_MINOR_VERSION
     _main_loop: asyncio.AbstractEventLoop
     _heweather_cert: HeWeatherCert
 
@@ -45,7 +49,7 @@ class HeWeatherConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     _jwt_pubkey: str
     _jwt_sub: str
     _jwt_kid: str
-    _location: str
+    _location: dict[str, dict[str, str] | None]
 
     _disasterlevel: str
     _disastermsg: str
@@ -60,7 +64,7 @@ class HeWeatherConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._jwt_sub = ''
         self._jwt_kid = ''
 
-        self._location = ''
+        self._location = {}
 
         self._disasterlevel = DEFAULT_DISASTER_LEVEL_CONF
         self._disastermsg = DEFAULT_DISASTER_MSG
@@ -188,7 +192,8 @@ class HeWeatherConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self, user_input: Optional[dict] = None
     ):
         if user_input:
-            self._location = user_input.get("location", self._location)
+            location_id, location_detail = await self.__get_location_detail(user_input.get("location", self._location.keys()[0] if len(self._location) > 0 else ""))
+            self._location.update({location_id: location_detail})
             return await self.async_step_disaster_config()
         return await self.__show_location_config_form("")
 
@@ -204,6 +209,31 @@ class HeWeatherConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             errors={'base': reason},
             last_step=False
         )
+
+    async def __get_location_detail(self, location: str) -> tuple[str, dict[str, str] | None]:
+        if self._auth_method == "key":
+            url = f"https://{self._host}/geo/v2/city/lookup?location={location}&key={self._key}"
+            headers = None
+        else:
+            url = f"https://{self._host}/geo/v2/city/lookup?location={location}"
+            jwt_token = await self._heweather_cert.get_jwt_token_heweather_async(self._jwt_sub, self._jwt_kid, int(time.time()) - 30, int(time.time()) + 180)
+            headers = {'Authorization': f'Bearer {jwt_token}'}
+
+        try:
+            timeout = aiohttp.ClientTimeout(total=20)
+            connector = aiohttp.TCPConnector(limit=10)
+            async with aiohttp.ClientSession(connector=connector, timeout=timeout, headers=headers) as session:
+                async with session.get(url) as response:
+                    json_data = await response.json()
+                    _id: str = json_data["location"][0]["id"]
+                    _detail: dict[str, str] = {"name": json_data["location"][0]["name"],
+                               "country": json_data["location"][0]["country"],
+                               "adm1": json_data["location"][0]["adm1"],
+                               "adm2": json_data["location"][0]["adm2"],}
+            return _id, _detail
+        except(asyncio.TimeoutError, aiohttp.ClientError):
+            _LOGGER.error("Error while accessing: %s", url)
+            return location, None
 
     async def async_step_disaster_config(
         self, user_input: Optional[dict] = None

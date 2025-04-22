@@ -45,6 +45,7 @@ class HeWeatherCert:
         self._file_future = {}
 
         self._root_path = os.path.abspath(root_path)
+        os.makedirs(self._root_path, exist_ok=True)
         self._cert_path = os.path.join(self._root_path, "certs")
         os.makedirs(self._cert_path, exist_ok=True)
 

@@ -10,6 +10,7 @@ import jwt
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ed25519
 
+# pylint: disable=relative-beyond-top-level
 from .const import CERT_NAME_PREFIX
 
 _LOGGER = logging.getLogger(__name__)

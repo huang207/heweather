@@ -31,9 +31,9 @@
             },
             "location_config": {
                 "title": "位置设置",
-                "description": "输入区域代码LocationID",
+                "description": "设置你的位置信息",
                 "data": {
-                    "location": "区域代码"
+                    "location": "[%key:common::config_flow::data::location%]"
                 }
             },
             "disaster_config": {

@@ -8,6 +8,11 @@ import aiohttp
 import voluptuous as vol
 
 from homeassistant import config_entries
+from homeassistant.const import CONF_LATITUDE, CONF_LOCATION, CONF_LONGITUDE
+from homeassistant.helpers.selector import (
+    LocationSelector,
+    LocationSelectorConfig,
+)
 
 from .heweather.const import (
     DOMAIN,
@@ -15,7 +20,7 @@ from .heweather.const import (
     CURRENT_CONF_VERSION,
     CURRENT_CONF_MINOR_VERSION,
     CONF_AUTH_METHOD,
-    CONF_LOCATION,
+    CONF_LOCATION as CONF_LOCATION_HEWEATHER,
     CONF_HOST,
     CONF_KEY,
     CONF_STORAGE_PATH,
@@ -192,7 +197,7 @@ class HeWeatherConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self, user_input: Optional[dict] = None
     ):
         if user_input:
-            location_id, location_detail = await self.__get_location_detail(user_input.get("location", self._location.keys()[0] if len(self._location) > 0 else ""))
+            location_id, location_detail = await self.__get_location_detail(user_input.get("location"))
             self._location.update({location_id: location_detail})
             return await self.async_step_disaster_config()
         return await self.__show_location_config_form("")
@@ -202,20 +207,31 @@ class HeWeatherConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             step_id="location_config",
             data_schema=vol.Schema({
                 vol.Required(
-                    "location",
-                    default=self._location
-                ): str,
+                    CONF_LOCATION,
+                    description={
+                        "suggested_value": {
+                            CONF_LATITUDE: self.hass.config.latitude,
+                            CONF_LONGITUDE: self.hass.config.longitude,
+                        }
+                    }
+                ): LocationSelector(
+                    LocationSelectorConfig(
+                        radius=False,
+                        icon=""
+                    )
+                ),
             }),
             errors={'base': reason},
             last_step=False
         )
 
-    async def __get_location_detail(self, location: str) -> tuple[str, dict[str, str] | None]:
+    async def __get_location_detail(self, location: dict) -> tuple[str, dict[str, str] | None]:
+        location_str = f"{location[CONF_LONGITUDE]:.2f},{location[CONF_LATITUDE]:.2f}"
         if self._auth_method == "key":
-            url = f"https://{self._host}/geo/v2/city/lookup?location={location}&key={self._key}"
+            url = f"https://{self._host}/geo/v2/city/lookup?location={location_str}&key={self._key}"
             headers = None
         else:
-            url = f"https://{self._host}/geo/v2/city/lookup?location={location}"
+            url = f"https://{self._host}/geo/v2/city/lookup?location={location_str}"
             jwt_token = await self._heweather_cert.get_jwt_token_heweather_async(self._jwt_sub, self._jwt_kid, int(time.time()) - 30, int(time.time()) + 180)
             headers = {'Authorization': f'Bearer {jwt_token}'}
 
@@ -233,7 +249,7 @@ class HeWeatherConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             return _id, _detail
         except(asyncio.TimeoutError, aiohttp.ClientError):
             _LOGGER.error("Error while accessing: %s", url)
-            return location, None
+            return location_str, None
 
     async def async_step_disaster_config(
         self, user_input: Optional[dict] = None
@@ -271,7 +287,7 @@ class HeWeatherConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 CONF_JWT_SUB: self._jwt_sub,
                 CONF_JWT_KID: self._jwt_kid,
                 CONF_HOST: self._host,
-                CONF_LOCATION: self._location,
+                CONF_LOCATION_HEWEATHER: self._location,
                 CONF_DISASTERLEVEL: self._disasterlevel,
                 CONF_DISASTERMSG: self._disastermsg,
             })
